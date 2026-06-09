@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ledgerly – Admin Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #f5f7fb; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; border-radius: 32px; padding: 32px; }
+        .business-card { background: #f8fafc; border-radius: 20px; padding: 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .business-card a { background: #0f172a; color: white; padding: 6px 12px; border-radius: 40px; text-decoration: none; }
+        button { background: #0f172a; color: white; padding: 8px 16px; border-radius: 40px; border: none; cursor: pointer; }
+        .admin-badge { background: #ef4444; color: white; padding: 4px 12px; border-radius: 40px; font-size: 12px; margin-left: 12px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Ledgerly <span id="adminBadge"></span></h1>
+    <div id="authSection">
+        <input type="email" id="email" placeholder="Email"><br>
+        <input type="password" id="password" placeholder="Password"><br>
+        <button id="loginBtn">Login</button>
+        <button id="signupBtn">Sign Up</button>
+        <div id="error" style="color:red;"></div>
+    </div>
+    <div id="businessSection" style="display:none;">
+        <h2>All Client Businesses</h2>
+        <button id="addBusinessBtn">+ Add New Business</button>
+        <div id="businessList" style="margin-top: 20px;"></div>
+        <hr><button id="logoutBtn">Logout</button>
+    </div>
+</div>
+<script>
+    const SUPABASE_URL = 'https://kvygamtieuvhkqjhdhlt.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_7GFIXIi_gyNVDBB8CpTwSg_v9qg5uIL';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let isAdmin = false;
+
+    async function checkAdmin() {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return false;
+        const { data } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single();
+        return data?.is_admin === true;
+    }
+
+    async function loadBusinesses() {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { document.getElementById('authSection').style.display = 'block'; document.getElementById('businessSection').style.display = 'none'; return; }
+        document.getElementById('authSection').style.display = 'none';
+        document.getElementById('businessSection').style.display = 'block';
+        isAdmin = await checkAdmin();
+        if (isAdmin) document.getElementById('adminBadge').innerHTML = '<span class="admin-badge">Admin Mode – Full Access</span>';
+        // Admin sees ALL businesses, regular users see only theirs
+        let query = supabase.from('businesses').select('*');
+        if (!isAdmin) query = query.eq('owner_user_id', user.id);
+        const { data, error } = await query.order('created_at', { ascending: false });
+        if (error) { console.error(error); return; }
+        const container = document.getElementById('businessList');
+        if (data.length === 0) { container.innerHTML = '<p>No businesses found.</p>'; return; }
+        container.innerHTML = data.map(b => `
+            <div class="business-card">
+                <div><strong>${b.name}</strong><br><small>Owner: ${b.owner_user_id}</small></div>
+                <a href="business.html?business_id=${b.id}">Open Books →</a>
+            </div>
+        `).join('');
+    }
+
+    document.getElementById('loginBtn').onclick = async () => {
+        const email = document.getElementById('email').value;
+        const pwd = document.getElementById('password').value;
+        const { error } = await supabase.auth.signInWithPassword({ email, password: pwd });
+        if (error) document.getElementById('error').innerText = error.message;
+        else loadBusinesses();
+    };
+    document.getElementById('signupBtn').onclick = async () => {
+        const email = document.getElementById('email').value;
+        const pwd = document.getElementById('password').value;
+        const { error } = await supabase.auth.signUp({ email, password: pwd });
+        if (error) document.getElementById('error').innerText = error.message;
+        else alert("Check your email to confirm!");
+    };
+    document.getElementById('logoutBtn').onclick = async () => { await supabase.auth.signOut(); location.reload(); };
+    document.getElementById('addBusinessBtn').onclick = async () => {
+        const name = prompt("Business name:");
+        if (!name) return;
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        await supabase.from('businesses').insert([{ name, owner_user_id: user.id }]);
+        loadBusinesses();
+    };
+    supabase.auth.getSession().then(({ data: { session } }) => { if (session) loadBusinesses(); });
+    supabase.auth.onAuthStateChange(() => loadBusinesses());
+</script>
+</body>
+</html>
